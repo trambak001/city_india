@@ -10,8 +10,16 @@ import io
 from PIL import Image
 import base64
 import requests
-from streamlit_lottie import st_lottie
 import json
+import os
+
+# Try to import streamlit-lottie, but provide fallback
+try:
+    from streamlit_lottie import st_lottie
+    LOTTIE_AVAILABLE = True
+except ImportError:
+    LOTTIE_AVAILABLE = False
+    st.warning("Lottie animations not available. Some animations will be disabled.")
 
 # Page configuration
 st.set_page_config(
@@ -109,28 +117,56 @@ def local_css():
     """, unsafe_allow_html=True)
 
 def load_lottie_url(url: str):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
+    return None
 
 def load_lottie_file(filepath: str):
-    with open(filepath, "r") as f:
-        return json.load(f)
+    try:
+        with open(filepath, "r") as f:
+            return json.load(f)
+    except:
+        return None
 
-# Load animations
+# Load animations with fallbacks
 def load_animations():
-    lottie_ai = load_lottie_url("https://assets1.lottiefiles.com/packages/lf20_gn0tojcq.json")
-    lottie_upload = load_lottie_url("https://assets1.lottiefiles.com/packages/lf20_kxsd2ytq.json")
-    lottie_processing = load_lottie_url("https://assets1.lottiefiles.com/packages/lf20_tno6cg2g.json")
-    lottie_results = load_lottie_url("https://assets1.lottiefiles.com/packages/lf20_ukaaBc.json")
+    animations = {}
     
-    return {
-        "ai": lottie_ai,
-        "upload": lottie_upload,
-        "processing": lottie_processing,
-        "results": lottie_results
-    }
+    if LOTTIE_AVAILABLE:
+        lottie_urls = {
+            "ai": "https://assets1.lottiefiles.com/packages/lf20_gn0tojcq.json",
+            "upload": "https://assets1.lottiefiles.com/packages/lf20_kxsd2ytq.json",
+            "processing": "https://assets1.lottiefiles.com/packages/lf20_tno6cg2g.json",
+            "results": "https://assets1.lottiefiles.com/packages/lf20_ukaaBc.json"
+        }
+        
+        for key, url in lottie_urls.items():
+            animations[key] = load_lottie_url(url)
+    else:
+        # Fallback: use emojis or static images
+        animations = {
+            "ai": None, "upload": None, "processing": None, "results": None
+        }
+    
+    return animations
+
+# Display animation with fallback
+def display_animation(animations, key, height=200):
+    if LOTTIE_AVAILABLE and animations.get(key):
+        st_lottie(animations[key], height=height, key=f"{key}_animation")
+    else:
+        # Fallback emojis
+        fallbacks = {
+            "ai": "🤖",
+            "upload": "📤", 
+            "processing": "⚙️",
+            "results": "📊"
+        }
+        st.markdown(f"<div style='text-align: center; font-size: 80px;'>{fallbacks.get(key, '🌟')}</div>", unsafe_allow_html=True)
 
 # Header section
 def header_section():
@@ -142,7 +178,7 @@ def header_section():
 # Sidebar
 def sidebar_section(animations):
     with st.sidebar:
-        st_lottie(animations["ai"], height=150, key="sidebar_ai")
+        display_animation(animations, "ai", 150)
         st.markdown("## Model Selection")
         
         model_option = st.selectbox(
@@ -191,8 +227,7 @@ def upload_section(animations):
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col2:
-        if animations["upload"]:
-            st_lottie(animations["upload"], height=200, key="upload_animation")
+        display_animation(animations, "upload", 200)
     
     return uploaded_file
 
@@ -210,18 +245,18 @@ def process_data(uploaded_file, model_option):
     status_text.text("Processing complete!")
     
     # Simulate model results based on file type and model
-    if uploaded_file.type.startswith('image'):
-        return simulate_image_results()
-    elif uploaded_file.type == 'text/plain':
-        return simulate_text_results()
-    elif uploaded_file.name.endswith('.csv'):
-        return simulate_csv_results()
-    else:
-        return simulate_general_results()
+    if uploaded_file and hasattr(uploaded_file, 'type'):
+        if uploaded_file.type.startswith('image'):
+            return simulate_image_results()
+        elif uploaded_file.type == 'text/plain':
+            return simulate_text_results()
+        elif uploaded_file.name.endswith('.csv'):
+            return simulate_csv_results()
+    
+    return simulate_general_results()
 
-# Simulated results for different file types
+# [Keep all the simulation functions from previous code...]
 def simulate_image_results():
-    # Generate sample image classification results
     classes = ['Cat', 'Dog', 'Bird', 'Car', 'Person', 'Building']
     probabilities = np.random.dirichlet(np.ones(6), size=1)[0]
     
@@ -234,11 +269,9 @@ def simulate_image_results():
         "top_prediction": classes[np.argmax(probabilities)],
         "confidence": float(np.max(probabilities))
     }
-    
     return results
 
 def simulate_text_results():
-    # Generate sample text analysis results
     sentiment = np.random.choice(['Positive', 'Negative', 'Neutral'])
     entities = [
         {"entity": "Apple", "type": "ORG", "confidence": 0.95},
@@ -252,11 +285,9 @@ def simulate_text_results():
         "entities": entities,
         "key_phrases": ["artificial intelligence", "machine learning", "neural networks"]
     }
-    
     return results
 
 def simulate_csv_results():
-    # Generate sample data prediction results
     dates = pd.date_range(start='2023-01-01', periods=30, freq='D')
     values = 100 + np.cumsum(np.random.normal(0, 5, 30))
     
@@ -271,7 +302,6 @@ def simulate_csv_results():
             "values": (values[-1] + np.cumsum(np.random.normal(0, 3, 7))).tolist()
         }
     }
-    
     return results
 
 def simulate_general_results():
@@ -282,12 +312,11 @@ def simulate_general_results():
         "model_used": "Custom Deep Learning Model"
     }
 
-# Results display
+# [Keep all display functions from previous code...]
 def display_results(results, animations):
     st.markdown("## 📊 Results")
     
-    if animations["results"]:
-        st_lottie(animations["results"], height=150, key="results_animation")
+    display_animation(animations, "results", 150)
     
     st.markdown("<div class='result-box'>", unsafe_allow_html=True)
     
@@ -310,7 +339,6 @@ def display_image_results(results):
         st.markdown(f"**Class:** {results['top_prediction']}")
         st.markdown(f"**Confidence:** {results['confidence']:.2%}")
         
-        # Confidence meter
         fig = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = results['confidence'] * 100,
@@ -336,8 +364,6 @@ def display_image_results(results):
     
     with col2:
         st.markdown("### All Predictions")
-        
-        # Create a bar chart of probabilities
         classes = [pred['class'] for pred in results['predictions']]
         probabilities = [pred['probability'] for pred in results['predictions']]
         
@@ -357,8 +383,6 @@ def display_text_results(results):
     
     with col1:
         st.markdown("### Sentiment Analysis")
-        
-        # Sentiment gauge
         sentiment_values = {'Positive': 1, 'Neutral': 0, 'Negative': -1}
         sentiment_value = sentiment_values[results['sentiment']]
         
@@ -388,7 +412,6 @@ def display_text_results(results):
     
     with col2:
         st.markdown("### Named Entities")
-        
         entities_df = pd.DataFrame(results['entities'])
         st.dataframe(entities_df, use_container_width=True)
         
@@ -399,10 +422,8 @@ def display_text_results(results):
 def display_data_results(results):
     st.markdown("### Data Analysis & Prediction")
     
-    # Create a time series plot with historical data and predictions
     fig = make_subplots(rows=1, cols=1)
     
-    # Historical data
     fig.add_trace(
         go.Scatter(
             x=results['historical_data']['dates'],
@@ -413,7 +434,6 @@ def display_data_results(results):
         )
     )
     
-    # Predictions
     fig.add_trace(
         go.Scatter(
             x=results['predictions']['dates'],
@@ -463,7 +483,6 @@ def display_general_results(results):
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-# Footer
 def footer_section():
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
@@ -497,15 +516,10 @@ def main():
     # Process and display results if file is uploaded
     if uploaded_file is not None:
         if st.button("🚀 Process with AI", use_container_width=True):
-            # Show processing animation
-            with st.spinner(''):
-                if animations["processing"]:
-                    st_lottie(animations["processing"], height=200, key="processing_animation")
+            with st.spinner('Processing your data...'):
+                display_animation(animations, "processing", 200)
+                results = process_data(uploaded_file, model_option)
             
-            # Process the data
-            results = process_data(uploaded_file, model_option)
-            
-            # Display results
             display_results(results, animations)
     
     # Footer
